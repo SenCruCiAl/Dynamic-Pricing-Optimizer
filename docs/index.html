@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pricing Under Elasticity</title>
+<meta name="description" content="Estimate a demand curve from noisy sales, pick a profit-maximising price, and check it against the closed-form Lerner optimum.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #f6f5f1; --ink: #1c1d1f; --muted: #686a6e; --rule: #d8d7d1; --panel: #eceae4;
+    --accent: #1f4e79; --truth: #1c1d1f; --chosen: #b4462b; --pts: rgba(31, 78, 121, .28);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #141517; --ink: #e7e7e4; --muted: #9a9b9e; --rule: #313338; --panel: #1c1e21;
+      --accent: #7fb0dd; --truth: #e7e7e4; --chosen: #ef8a6a; --pts: rgba(127, 176, 221, .3);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #141517; --ink: #e7e7e4; --muted: #9a9b9e; --rule: #313338; --panel: #1c1e21;
+    --accent: #7fb0dd; --truth: #e7e7e4; --chosen: #ef8a6a; --pts: rgba(127, 176, 221, .3);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 18px/1.6 "Source Serif 4", Georgia, serif; }
+  main { max-width: 980px; margin: 0 auto; padding: 56px 16px 80px; }
+  .prose { max-width: 700px; }
+  .kicker { font: 500 12px/1 "IBM Plex Mono", monospace; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+  h1 { font-size: 40px; line-height: 1.12; font-weight: 600; margin: 14px 0 12px; letter-spacing: -.01em; }
+  h2 { font-size: 22px; font-weight: 600; margin: 52px 0 8px; }
+  h2 .n { font: 500 13px "IBM Plex Mono", monospace; color: var(--muted); margin-right: 10px; }
+  p { margin: 0 0 14px; }
+  a { color: var(--accent); text-underline-offset: 3px; }
+  header { border-bottom: 1px solid var(--rule); padding-bottom: 28px; margin-bottom: 8px; }
+  .links { display: flex; flex-wrap: wrap; gap: 18px; margin-top: 16px; font: 14px "IBM Plex Mono", monospace; }
+  .mono, td.num, th.num { font-family: "IBM Plex Mono", monospace; font-variant-numeric: tabular-nums; }
+
+  .lab { display: grid; grid-template-columns: 260px 1fr; gap: 32px; margin-top: 20px; }
+  .controls { border-top: 2px solid var(--ink); padding-top: 12px; }
+  .ctl { padding: 10px 0 12px; border-bottom: 1px solid var(--rule); }
+  .ctl label { display: flex; justify-content: space-between; font-size: 15px; }
+  .ctl output { font: 14px "IBM Plex Mono", monospace; }
+  .ctl small { display: block; color: var(--muted); font-size: 13px; line-height: 1.35; margin-top: 2px; }
+  input[type=range] { width: 100%; accent-color: var(--accent); margin: 8px 0 0; }
+  button.plain {
+    margin-top: 14px; font: 13px "IBM Plex Mono", monospace; background: none; color: var(--ink);
+    border: 1px solid var(--ink); padding: 7px 12px; cursor: pointer;
+  }
+  button.plain:hover { background: var(--ink); color: var(--bg); }
+  .charts svg { width: 100%; display: block; }
+  svg text { font-family: "IBM Plex Mono", monospace; fill: var(--muted); font-size: 11px; }
+  .chart-title { font: 500 12px "IBM Plex Mono", monospace; color: var(--muted); letter-spacing: .04em; text-transform: uppercase; margin: 0 0 4px; }
+  .figgap { height: 18px; }
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); border-top: 2px solid var(--ink); margin-top: 22px; }
+  .stat { padding: 10px 12px 10px 0; border-bottom: 1px solid var(--rule); }
+  .stat .k { font-size: 13px; color: var(--muted); }
+  .stat .v { font: 500 22px "IBM Plex Mono", monospace; font-variant-numeric: tabular-nums; }
+  .stat .v.warn { color: var(--chosen); }
+  .legend { display: flex; flex-wrap: wrap; gap: 16px; font: 12px "IBM Plex Mono", monospace; color: var(--muted); margin-top: 6px; }
+  .legend i { display: inline-block; width: 16px; height: 0; border-top: 2px solid; vertical-align: middle; margin-right: 6px; }
+  .callout { background: var(--panel); border-left: 3px solid var(--chosen); padding: 12px 16px; font-size: 16px; margin-top: 18px; }
+  .callout[hidden] { display: none; }
+  table { width: 100%; border-collapse: collapse; font-size: 15px; margin: 12px 0; }
+  th, td { text-align: left; padding: 7px 10px 7px 0; border-bottom: 1px solid var(--rule); }
+  th { font-weight: 600; font-size: 13px; color: var(--muted); }
+  td.num, th.num { text-align: right; padding-left: 10px; padding-right: 0; font-size: 14px; }
+  .eq { font: 16px "IBM Plex Mono", monospace; background: var(--panel); padding: 10px 14px; margin: 10px 0 14px; overflow-x: auto; }
+  footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--rule); font-size: 14px; color: var(--muted); max-width: 700px; }
+  @media (max-width: 760px) {
+    body { font-size: 17px; }
+    h1 { font-size: 31px; }
+    .lab { grid-template-columns: 1fr; gap: 18px; }
+    .stats { grid-template-columns: 1fr 1fr; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <header class="prose">
+    <div class="kicker">Pricing · demand estimation · simulation with known truth</div>
+    <h1>What price maximises profit, and how close does an estimate get?</h1>
+    <p>Sales are simulated from a demand curve whose answer is known in closed form. The model only sees the noisy
+      sales, fits a curve, and picks a price. Move the sliders and compare its choice with the true optimum.</p>
+    <div class="links">
+      <a href="https://github.com/SenCruCiAl/Dynamic-Pricing-Optimizer">Source on GitHub</a>
+      <a href="#method">Method</a>
+      <a href="#benchmark">Benchmark</a>
+    </div>
+  </header>
+
+  <section class="lab" aria-label="Interactive simulation">
+    <div class="controls">
+      <div class="ctl"><label for="e">Elasticity <output id="eo"></output></label>
+        <input id="e" type="range" min="0.6" max="4" step="0.05" value="1.6">
+        <small>How sharply demand falls as price rises. Above 1 is elastic.</small></div>
+      <div class="ctl"><label for="c">Unit cost <output id="co"></output></label>
+        <input id="c" type="range" min="0" max="60" step="1" value="20">
+        <small>Set it to 0 to maximise revenue instead of profit.</small></div>
+      <div class="ctl"><label for="s">Noise, σ of log demand <output id="so"></output></label>
+        <input id="s" type="range" min="0.02" max="0.8" step="0.02" value="0.2"></div>
+      <div class="ctl"><label for="n">Observations <output id="no"></output></label>
+        <input id="n" type="range" min="10" max="600" step="10" value="120"></div>
+      <div class="ctl"><label for="hi">Price range <output id="ho"></output></label>
+        <input id="hi" type="range" min="40" max="200" step="5" value="100">
+        <small>Allowed prices run from 10 up to this ceiling.</small></div>
+      <button class="plain" id="reseed">Draw new sales data</button>
+    </div>
+
+    <div class="charts">
+      <p class="chart-title">Demand: observed sales and fitted curve</p>
+      <svg id="demand" height="250" role="img" aria-label="Demand curve"></svg>
+      <div class="legend"><span><i style="border-color:var(--truth);border-top-style:dashed"></i>true demand</span>
+        <span><i style="border-color:var(--accent)"></i>fitted (log-log)</span></div>
+      <div class="figgap"></div>
+      <p class="chart-title">Profit at each price</p>
+      <svg id="profit" height="250" role="img" aria-label="Profit curve"></svg>
+      <div class="legend"><span><i style="border-color:var(--truth);border-top-style:dashed"></i>true profit</span>
+        <span><i style="border-color:var(--accent)"></i>predicted profit</span>
+        <span><i style="border-color:var(--chosen)"></i>chosen price</span></div>
+      <div class="stats">
+        <div class="stat"><div class="k">Chosen price</div><div class="v" id="pc"></div></div>
+        <div class="stat"><div class="k">True optimum</div><div class="v" id="pt"></div></div>
+        <div class="stat"><div class="k">Elasticity estimate</div><div class="v" id="ee"></div></div>
+        <div class="stat"><div class="k">Profit left on table</div><div class="v" id="rg"></div></div>
+      </div>
+      <div class="callout" id="corner" hidden></div>
+    </div>
+  </section>
+
+  <div class="prose">
+    <h2 id="method"><span class="n">01</span>Method</h2>
+    <p>Demand has constant elasticity <i>e</i> with multiplicative noise, so log demand is linear in log price:</p>
+    <div class="eq">D(p) = A · (p / p₀)^(−e) · exp(ε),  ε ~ N(0, σ²)</div>
+    <p>The fitted model is ordinary least squares on log demand against log price. Profit is
+      <span class="mono">(p − c) · D(p)</span>. Setting its derivative to zero gives the Lerner markup, which is the
+      ground truth every chosen price is scored against:</p>
+    <div class="eq">p* = c · e / (e − 1)   for e &gt; 1, clipped to the allowed range</div>
+    <p>Two consequences are easy to see with the sliders. With zero cost and elastic demand, revenue falls at every
+      price, so the best price is always the floor. With inelastic demand (<i>e</i> ≤ 1), profit rises with price
+      without limit, so the answer is always the ceiling. Neither is a pricing insight; they are corners of the
+      model.</p>
+    <p>The optimiser does a dense grid search, then refines the best bracket with Brent's method. Brent's method
+      alone assumes a single peak, which fails on the step-shaped curves a random forest produces.</p>
+
+    <h2 id="benchmark"><span class="n">02</span>Benchmark: what the original version got wrong</h2>
+    <p>The first version of this project chose between linear regression and a random forest by <b>in-sample</b>
+      R², which the forest wins by memorising the data (R² 0.998), and then ran Brent's method alone. Below is
+      mean profit regret across 30 simulated datasets per row, 300 observations each, prices 10 to 100, unit cost 20.
+      The Python pipeline produced these numbers (<span class="mono">src/benchmark.py</span>).</p>
+    <table id="bench">
+      <thead><tr><th>Elasticity</th><th class="num">σ</th><th class="num">CV-selected</th><th class="num">Forest + grid</th><th class="num">Forest + Brent only</th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <p style="font-size:15px;color:var(--muted)">Caveat: the simulated demand is log-linear, so the log-log model is
+      correctly specified here by construction. That is why the pipeline picks the model by cross-validated error
+      instead of hard-coding log-log: on real data with a different shape, the forest could win.</p>
+  </div>
+
+  <footer>Lerner, A. P. (1934). The concept of monopoly and the measurement of monopoly power. <i>Review of Economic
+    Studies</i> 1(3), 157–175. Synthetic data only; nothing here is fitted to real sales.</footer>
+</main>
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  const NS = "http://www.w3.org/2000/svg";
+  const el = (tag, attrs, parent) => {
+    const e = document.createElementNS(NS, tag);
+    for (const k in attrs) e.setAttribute(k, attrs[k]);
+    parent && parent.appendChild(e);
+    return e;
+  };
+  const A = 500, P0 = 50, LO = 10;
+  let seed = 7;
+
+  // Seeded PRNG (mulberry32) plus Box-Muller, so a slider change does not redraw the noise.
+  function rng(s) {
+    return () => { s |= 0; s = s + 0x6D2B79F5 | 0; let t = Math.imul(s ^ s >>> 15, 1 | s);
+      t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+  }
+  const trueD = (p, e) => A * Math.pow(p / P0, -e);
+
+  function simulate(n, e, sigma, hi) {
+    const r = rng(seed), pts = [];
+    for (let i = 0; i < n; i++) {
+      const p = LO + r() * (hi - LO);
+      const z = Math.sqrt(-2 * Math.log(r() || 1e-12)) * Math.cos(2 * Math.PI * r());
+      pts.push([p, trueD(p, e) * Math.exp(sigma * z)]);
+    }
+    return pts;
+  }
+
+  function fitLogLog(pts) {
+    const xs = pts.map(p => Math.log(p[0])), ys = pts.map(p => Math.log(p[1]));
+    const mx = xs.reduce((a, b) => a + b) / xs.length, my = ys.reduce((a, b) => a + b) / ys.length;
+    let sxy = 0, sxx = 0;
+    xs.forEach((x, i) => { sxy += (x - mx) * (ys[i] - my); sxx += (x - mx) ** 2; });
+    const beta = sxy / sxx, alpha = my - beta * mx;
+    return { beta, predict: p => Math.exp(alpha + beta * Math.log(p)) };
+  }
+
+  function optimise(f, lo, hi, cost) {
+    const N = 400; let best = lo, bv = -Infinity;
+    for (let i = 0; i < N; i++) { const p = lo + (hi - lo) * i / (N - 1), v = (p - cost) * f(p); if (v > bv) { bv = v; best = p; } }
+    // Golden-section refinement inside the winning bracket.
+    const step = (hi - lo) / (N - 1);
+    let a = Math.max(lo, best - step), b = Math.min(hi, best + step);
+    const g = (Math.sqrt(5) - 1) / 2, obj = p => (p - cost) * f(p);
+    for (let k = 0; k < 60; k++) { const c = b - g * (b - a), d = a + g * (b - a); if (obj(c) > obj(d)) b = d; else a = c; }
+    const m = (a + b) / 2;
+    return obj(m) > bv ? m : best;
+  }
+  const lerner = (e, c, lo, hi) => e <= 1 ? hi : Math.min(hi, Math.max(lo, c * e / (e - 1)));
+
+  function frame(svg, xmax, ymax, ylabel) {
+    svg.replaceChildren();
+    const W = Math.round(svg.parentElement.clientWidth), H = 250;
+    svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+    const L = 52, R = W - 12, T = 10, B = H - 34;
+    const x = v => L + (v - LO) / (xmax - LO) * (R - L), y = v => B - (v / ymax) * (B - T);
+    const nice = m => { const s = Math.pow(10, Math.floor(Math.log10(m / 5))); return [1, 2, 2.5, 5, 10].map(k => k * s).find(k => m / k <= 5); };
+    const ys = nice(ymax);
+    for (let v = 0; v <= ymax + 1e-9; v += ys) {
+      el("line", { x1: L, x2: R, y1: y(v), y2: y(v), stroke: css("--rule") }, svg);
+      el("text", { x: L - 8, y: y(v) + 4, "text-anchor": "end" }, svg).textContent = v >= 1000 ? (v / 1000) + "k" : v;
+    }
+    const xs = nice(xmax - LO);
+    for (let v = Math.ceil(LO / xs) * xs; v <= xmax + 1e-9; v += xs)
+      el("text", { x: x(v), y: B + 16, "text-anchor": "middle" }, svg).textContent = v;
+    el("text", { x: R, y: B + 30, "text-anchor": "end" }, svg).textContent = "price";
+    el("text", { x: 4, y: T + 2, "text-anchor": "start", transform: `rotate(90 4 ${T + 2})` }, svg).textContent = ylabel;
+    return { x, y, B, T, clip: v => Math.max(0, Math.min(ymax, v)) };
+  }
+  const path = (f, x, y, lo, hi, clip) => {
+    let d = "";
+    for (let i = 0; i <= 200; i++) { const p = lo + (hi - lo) * i / 200; d += (i ? "L" : "M") + x(p).toFixed(1) + " " + y(clip(f(p))).toFixed(1); }
+    return d;
+  };
+
+  function render() {
+    const e = +$("e").value, c = +$("c").value, s = +$("s").value, n = +$("n").value, hi = +$("hi").value;
+    $("eo").textContent = e.toFixed(2); $("co").textContent = c; $("so").textContent = s.toFixed(2);
+    $("no").textContent = n; $("ho").textContent = `10 – ${hi}`;
+
+    const pts = simulate(n, e, s, hi), fit = fitLogLog(pts);
+    const chosen = optimise(fit.predict, LO, hi, c), truth = lerner(e, c, LO, hi);
+    const tp = p => (p - c) * trueD(p, e);
+    const regret = tp(truth) > 0 ? Math.max(0, 1 - tp(chosen) / tp(truth)) : 0;
+
+    // Demand chart, y capped at the 97th percentile so outliers do not flatten it.
+    const sorted = pts.map(p => p[1]).sort((a, b) => a - b);
+    const dmax = Math.max(trueD(LO, e), sorted[Math.floor(sorted.length * .97)]) * 1.05;
+    const d = frame($("demand"), hi, dmax, "units");
+    for (const [p, q] of pts) if (q <= dmax) el("circle", { cx: d.x(p), cy: d.y(q), r: 2.6, fill: css("--pts") }, $("demand"));
+    el("path", { d: path(p => trueD(p, e), d.x, d.y, LO, hi, d.clip), fill: "none", stroke: css("--truth"), "stroke-width": 1.4, "stroke-dasharray": "5 4" }, $("demand"));
+    el("path", { d: path(fit.predict, d.x, d.y, LO, hi, d.clip), fill: "none", stroke: css("--accent"), "stroke-width": 2.2 }, $("demand"));
+
+    let pmax = 0;
+    for (let i = 0; i <= 200; i++) { const p = LO + (hi - LO) * i / 200; pmax = Math.max(pmax, tp(p), (p - c) * fit.predict(p)); }
+    const f = frame($("profit"), hi, Math.max(pmax * 1.08, 1), "profit");
+    el("path", { d: path(tp, f.x, f.y, LO, hi, f.clip), fill: "none", stroke: css("--truth"), "stroke-width": 1.4, "stroke-dasharray": "5 4" }, $("profit"));
+    el("path", { d: path(p => (p - c) * fit.predict(p), f.x, f.y, LO, hi, f.clip), fill: "none", stroke: css("--accent"), "stroke-width": 2.2 }, $("profit"));
+    el("line", { x1: f.x(truth), x2: f.x(truth), y1: f.T, y2: f.B, stroke: css("--truth"), "stroke-width": 1 }, $("profit"));
+    el("line", { x1: f.x(chosen), x2: f.x(chosen), y1: f.T, y2: f.B, stroke: css("--chosen"), "stroke-width": 2 }, $("profit"));
+
+    $("pc").textContent = chosen.toFixed(2);
+    $("pt").textContent = truth.toFixed(2);
+    $("ee").textContent = (-fit.beta).toFixed(2);
+    $("rg").textContent = (100 * regret).toFixed(regret < 0.01 ? 2 : 1) + "%";
+    $("rg").className = "v" + (regret > 0.02 ? " warn" : "");
+
+    const corner = $("corner");
+    if (e <= 1) { corner.hidden = false; corner.textContent = "Demand is inelastic here, so profit keeps rising with price and the optimum is the ceiling. A real market would not stay inelastic forever; the model has reached its limit."; }
+    else if (truth <= LO + 1e-9) { corner.hidden = false; corner.textContent = c === 0 ? "With zero cost and elastic demand, revenue falls at every price, so the best price is the floor. This is why the optimiser maximises profit, not revenue." : "The Lerner markup falls below the price floor, so the floor is optimal."; }
+    else if (truth >= hi - 1e-9) { corner.hidden = false; corner.textContent = "The Lerner markup is above the ceiling, so the ceiling is optimal."; }
+    else corner.hidden = true;
+  }
+
+  ["e", "c", "s", "n", "hi"].forEach(id => $(id).addEventListener("input", render));
+  $("reseed").addEventListener("click", () => { seed = (seed * 48271 + 11) % 2147483647; render(); });
+  let t; addEventListener("resize", () => { clearTimeout(t); t = setTimeout(render, 120); });
+  matchMedia("(prefers-color-scheme: dark)").addEventListener("change", render);
+  render();
+
+  fetch("benchmark.json").then(r => r.json()).then(b => {
+    const pct = v => (100 * v).toFixed(2) + "%";
+    $("bench").querySelector("tbody").innerHTML = b.rows.map(r =>
+      `<tr><td>${r.elasticity}</td><td class="num">${r.noise_sigma}</td><td class="num"><b>${pct(r.cv_selected_grid_mean_regret)}</b></td>` +
+      `<td class="num">${pct(r.forest_grid_mean_regret)}</td><td class="num">${pct(r.forest_brent_only_mean_regret)}</td></tr>`).join("");
+  }).catch(() => { $("bench").querySelector("tbody").innerHTML = "<tr><td colspan=5>benchmark.json not found</td></tr>"; });
+})();
+</script>
+</body>
+</html>

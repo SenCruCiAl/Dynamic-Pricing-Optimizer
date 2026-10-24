@@ -1,156 +1,114 @@
-# Dynamic Pricing Optimization Engine
+# Dynamic Pricing Optimizer
 
-A production-ready Python project that simulates demand behavior, learns a demand curve from data, estimates elasticity, and computes the revenue-maximizing price under configurable price bounds.
+[![CI](https://github.com/SenCruCiAl/Dynamic-Pricing-Optimizer/actions/workflows/ci.yml/badge.svg)](https://github.com/SenCruCiAl/Dynamic-Pricing-Optimizer/actions/workflows/ci.yml)
 
-## Why this project matters
+**Interactive page:** https://sencrucial.github.io/Dynamic-Pricing-Optimizer/
 
-Dynamic pricing allows businesses to respond to demand patterns and maximize topline revenue instead of relying on static prices. This engine demonstrates an end-to-end workflow from synthetic data generation to optimization and business reporting.
+Simulates sales from a demand curve with a known answer, estimates the curve
+from noisy data, picks a profit-maximising price, and scores that price
+against the closed-form optimum. Because the data is simulated, every number
+here can be checked against ground truth.
 
----
+## The problem being solved
 
-## Revenue Maximization Explained
+Demand has constant elasticity `e` with multiplicative noise:
 
-The objective function is:
-
-\[
-\text{Revenue}(p) = p \times \hat{D}(p)
-\]
-
-Where:
-- \(p\) = candidate price
-- \(\hat{D}(p)\) = model-predicted demand at price \(p\)
-
-The optimizer searches within constraints \([\text{min\_price}, \text{max\_price}]\) and selects the price with maximum expected revenue.
-
----
-
-## Price Elasticity Explained
-
-Price elasticity of demand measures how sensitive demand is to price changes.
-
-- Elasticity magnitude **> 1**: demand is highly price-sensitive.
-- Elasticity magnitude **< 1**: demand is less price-sensitive.
-
-This project estimates elasticity from log-log regression:
-
-\[
-\log(D) = \alpha + \beta\log(P)
-\]
-
-Where \(\beta\) is the estimated elasticity coefficient (usually negative in real markets).
-
----
-
-## System Architecture
-
-1. **Data Simulation (`src/simulator.py`)**
-   - Generates synthetic demand data with controllable elasticity and noise.
-   - Writes dataset to `data/demand_data.csv`.
-
-2. **Demand Modeling (`src/demand_model.py`)**
-   - Trains two models: Linear Regression and Random Forest Regressor.
-   - Selects the better model using in-sample R².
-   - Estimates elasticity from log-log regression.
-   - Saves trained model artifacts to `models/demand_model.pkl`.
-
-3. **Optimization (`src/optimizer.py`)**
-   - Defines revenue as `price * predicted_demand`.
-   - Uses `scipy.optimize.minimize_scalar` to maximize revenue in bounded price interval.
-
-4. **Analysis & Visualization (`src/analysis.py`)**
-   - Demand curve plot.
-   - Revenue curve plot.
-   - Elasticity sensitivity comparison plot.
-
-5. **CLI Orchestration (`src/main.py`)**
-   - Runs the full pipeline end-to-end.
-   - Stores summary output in `results/optimal_price.json`.
-
----
-
-## Repository Structure
-
-```text
-dynamic-pricing-engine/
-│
-├── data/
-├── src/
-│   ├── simulator.py
-│   ├── demand_model.py
-│   ├── optimizer.py
-│   ├── analysis.py
-│   ├── utils.py
-│   └── main.py
-│
-├── results/
-├── models/
-├── requirements.txt
-├── README.md
-└── .gitignore
+```
+D(p) = A · (p / p0)^(-e) · exp(eps),   eps ~ N(0, sigma^2)
 ```
 
----
+Profit is `(p - c) · D(p)` for unit cost `c`. Setting its derivative to zero
+gives the Lerner markup (Lerner, 1934):
 
-## Installation
+```
+p* = c · e / (e - 1)     for e > 1, clipped to [min_price, max_price]
+```
+
+Two corner cases follow directly and are tested:
+
+- **Zero cost (pure revenue maximisation) with elastic demand:** revenue
+  `∝ p^(1-e)` falls at every price, so the optimum is always `min_price`.
+- **Inelastic demand (`e ≤ 1`):** profit rises with price everywhere, so the
+  optimum is always `max_price`.
+
+## Pipeline
+
+1. `simulator.py`: draw prices uniformly in the allowed range and demand from
+   the curve above.
+2. `demand_model.py`: fit a log-log regression (constant elasticity) and a
+   random forest; **select by 5-fold cross-validated RMSE**.
+3. `optimizer.py`: dense grid search over the price range, then Brent's
+   method inside the best bracket; `analytic_optimal_price` gives the truth.
+4. `main.py`: run it all and report the chosen price, the analytic optimum and
+   the profit regret.
+5. `benchmark.py`: Monte Carlo comparison of strategies (below).
+
+## What was wrong in the first version, and the evidence
+
+| Issue | Effect | Fix |
+|---|---|---|
+| Objective was revenue with zero cost | Under constant elasticity the true optimum is always a price bound, so the "optimal price" was meaningless | Profit objective with a unit cost (`--unit_cost`, default 20) |
+| Model chosen by in-sample R² | Random forest always won (R² 0.998 vs 0.650) by memorising the data | 5-fold CV RMSE (log-log 172 vs forest 210 on the default run) |
+| Brent's method alone on a step-shaped forest curve | Returned 13.93 when the true optimum for that setup was the floor, 10.00 | Grid search first, Brent refinement inside the best bracket |
+
+Mean profit regret against the analytic optimum, 30 seeds per row, 300
+observations, prices 10–100, unit cost 20 (`python src/benchmark.py`):
+
+| Elasticity | σ | CV-selected (this version) | Forest + grid | Forest + Brent only (original) |
+|---|---|---|---|---|
+| 1.3 | 0.15 | **0.02%** | 0.82% | 0.92% |
+| 1.3 | 0.30 | **0.09%** | 0.98% | 3.31% |
+| 1.6 | 0.15 | **0.13%** | 1.02% | 1.64% |
+| 1.6 | 0.30 | **0.15%** | 2.62% | 2.12% |
+| 2.0 | 0.15 | **0.03%** | 1.38% | 2.91% |
+| 2.0 | 0.30 | **0.05%** | 3.21% | 6.16% |
+| 3.0 | 0.15 | **0.14%** | 2.09% | 2.40% |
+| 3.0 | 0.30 | **0.16%** | 3.37% | 3.66% |
+
+**Caveat.** The simulated demand is log-linear, so the log-log model is
+correctly specified here by construction, and its win is expected. The
+pipeline still selects by cross-validation rather than hard-coding log-log,
+because on real data with a different demand shape the forest could win.
+Nothing in this repository is fitted to real sales data.
+
+## Run it
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate
 pip install -r requirements.txt
+python src/main.py --min_price 10 --max_price 100            # unit cost 20, e = 1.4
+python src/main.py --min_price 10 --max_price 100 --unit_cost 0   # revenue: lands on the floor
+pytest -q tests
 ```
 
-## Run the Engine
+Options: `--unit_cost`, `--elasticity`, `--noise`, `--samples`, `--seed`.
 
-```bash
-python src/main.py --min_price 10 --max_price 100
-```
-
-Optional parameters:
-- `--elasticity` (default: `1.4`)
-- `--samples` (default: `300`)
-
----
-
-## Outputs
-
-After execution, you will get:
-
-- `data/demand_data.csv`
-- `models/demand_model.pkl`
-- `results/optimal_price.json`
-- `results/demand_curve.png`
-- `results/revenue_curve.png`
-- `results/elasticity_sensitivity.png`
-
-### Example `results/optimal_price.json`
+Output of the default run (`results/optimal_price.json`, trimmed):
 
 ```json
 {
-  "min_price": 10.0,
-  "max_price": 100.0,
-  "simulated_elasticity": 1.4,
-  "estimated_elasticity": -1.35,
-  "optimal_price": 34.72,
-  "expected_demand": 760.11,
-  "expected_revenue": 26391.15,
-  "optimization_success": true
+  "selected_model": "log_log",
+  "cv_rmse": {"log_log": 172.42, "random_forest": 209.67},
+  "estimated_elasticity": -1.407,
+  "optimal_price": 69.11,
+  "analytic_optimal_price": 70.0,
+  "profit_regret_vs_true_optimum": 0.00005
 }
 ```
 
----
+The profit curve is flat near its peak, so a price 0.9 away from the optimum
+loses only 0.005% of profit.
 
-## Business Implications
+Figures go to `results/`: `demand_curve.png` (observations, fitted and true
+demand), `profit_curve.png` (predicted vs true profit with both optima) and
+`elasticity_sensitivity.png`.
 
-- **Higher margin capture:** identifies price points where demand drop-off is offset by higher unit prices.
-- **Demand-aware decisions:** elasticity estimation helps forecast customer sensitivity by category.
-- **Scenario planning:** sensitivity analysis reveals how robust pricing strategy is under different market reactions.
-- **Operational deployment:** saved model and JSON outputs can be integrated into BI dashboards or automated pricing workflows.
+## Project page
 
----
+`docs/index.html` reimplements the simulator, log-log fit and optimiser in
+plain JavaScript so the page runs with no backend. It is deployed by
+`.github/workflows/pages.yml`.
 
-## Code Quality
+## Reference
 
-- PEP8-compliant modules
-- Docstrings for public classes/functions
-- Structured logging for observability
-- Deterministic simulation via random seed
+Lerner, A. P. (1934). The concept of monopoly and the measurement of monopoly
+power. *Review of Economic Studies*, 1(3), 157–175.

@@ -14,21 +14,29 @@ LOGGER = logging.getLogger(__name__)
 class DemandSimulator:
     """Generate synthetic price-demand data.
 
-    Demand function used:
-        demand = base_demand * (price / reference_price) ** (-elasticity) + noise
+    Demand follows a constant-elasticity curve with multiplicative noise:
+        demand = base_demand * (price / reference_price) ** (-elasticity) * exp(eps),
+        eps ~ N(0, noise_sigma^2)
+
+    Multiplicative noise keeps demand positive and makes log-demand linear in
+    log-price, which is the standard econometric form for elasticity estimation.
     """
 
     def __init__(
         self,
         base_demand: float = 500.0,
         reference_price: float = 50.0,
-        noise_std: float = 15.0,
+        noise_sigma: float = 0.15,
         random_seed: int = 42,
     ) -> None:
         self.base_demand = base_demand
         self.reference_price = reference_price
-        self.noise_std = noise_std
+        self.noise_sigma = noise_sigma
         self.random_seed = random_seed
+
+    def true_demand(self, prices: np.ndarray, elasticity: float) -> np.ndarray:
+        """Noise-free demand at the given prices."""
+        return self.base_demand * (np.asarray(prices) / self.reference_price) ** (-elasticity)
 
     def generate(
         self,
@@ -41,18 +49,15 @@ class DemandSimulator:
         rng = np.random.default_rng(self.random_seed)
         prices = rng.uniform(min_price, max_price, n_samples)
 
-        deterministic_demand = self.base_demand * (
-            prices / self.reference_price
-        ) ** (-elasticity)
-        noise = rng.normal(loc=0.0, scale=self.noise_std, size=n_samples)
-        demand = np.clip(deterministic_demand + noise, 1.0, None)
+        deterministic_demand = self.true_demand(prices, elasticity)
+        noise = rng.normal(loc=0.0, scale=self.noise_sigma, size=n_samples)
+        demand = deterministic_demand * np.exp(noise)
 
         data = pd.DataFrame(
             {
                 "price": prices,
                 "demand": demand,
                 "true_deterministic_demand": deterministic_demand,
-                "noise": noise,
                 "elasticity": elasticity,
             }
         ).sort_values("price", ignore_index=True)
